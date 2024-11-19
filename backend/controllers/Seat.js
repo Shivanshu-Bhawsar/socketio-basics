@@ -65,32 +65,118 @@ exports.getAllSeats = async (req, res) => {
   }
 };
 
-exports.bookSeat = async (req, res, io) => {
+exports.reserveSeats = async (req, res, io) => {
   try {
+    // fetching seats ids
     const { seatIds } = req.body;
-    console.log("req body: ", seatIds);
 
-    // Update the status of each selected seat to "Booked"
-    const updatedSeats = await Seat.updateMany(
-      { _id: { $in: seatIds } },
-      { $set: { seatStatus: "Booked" } }, // Corrected field name here
-      { new: true }
+    // check if seats are already reserved or not
+    const seats = await Seat.find({
+      _id: { $in: seatIds },
+      seatStatus: "Available",
+    });
+
+    if (seats.length === 0 || seats.length !== seatIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Seats are already reserved or unavailable2.",
+      });
+    }
+
+    // Reserve the seats
+    const result = await Seat.updateMany(
+      { _id: { $in: seatIds }, seatStatus: "Available" },
+      { $set: { seatStatus: "Reserved", reservedAt: new Date() } }
     );
+    // console.log("reserved res: ", result);
 
-    if (!updatedSeats || updatedSeats.nModified === 0) {
-      return res
-        .status(404)
-        .json({ message: "Seats not found or already booked" });
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Seats are already reserved or unavailable.",
+      });
+    }
+
+    // Schedule to revert the reserved status after 5 minutes
+    setTimeout(async () => {
+      try {
+        // Find the reserved seats that haven't been booked yet (within the last 5 minutes)
+        const fiveMinutesAgo = new Date(Date.now() - 1 * 60 * 1000);
+
+        // Check if any of the reserved seats are still reserved after 5 minutes
+        const seatsToRevert = await Seat.find({
+          _id: { $in: seatIds },
+          seatStatus: "Reserved",
+          reservedAt: { $lte: fiveMinutesAgo },
+        });
+        console.log("seatsToRevert: ", seatsToRevert);
+
+        // If there are seats to revert, change their status to Available
+        if (seatsToRevert.length > 0) {
+          // Update only those seats that are still reserved
+          await Seat.updateMany(
+            {
+              _id: { $in: seatsToRevert.map((seat) => seat._id) },
+              seatStatus: "Reserved",
+            },
+            { $set: { seatStatus: "Available", reservedAt: null } }
+          );
+          console.log(`Reverted seats ${seatIds} to Available`);
+          io.emit("seatsToRevert", seatIds);
+        }
+      } catch (error) {
+        console.error("Error reverting reserved seats:", error.message);
+      }
+    }, 1 * 60 * 1000); // 5 minutes in milliseconds
+
+    // Emit event to notify clients about the updated seats
+    io.emit("reservedSeats", seatIds); // Emit an array of seatIds
+
+    res.status(200).json({
+      success: true,
+      message:
+        "Seats reserved successfully. They will be reverted if not booked within 5 minutes.",
+    });
+  } catch (error) {
+    console.error("Error reserving seats:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error while reserving seats.",
+    });
+  }
+};
+
+exports.bookSeats = async (req, res, io) => {
+  try {
+    // fetching seat ids
+    const { seatIds } = req.body;
+
+    // Mark the seats as Booked
+    const result = await Seat.updateMany(
+      { _id: { $in: seatIds }, seatStatus: "Reserved" },
+      { $set: { seatStatus: "Booked", reservedAt: null } }
+    );
+    console.log("book res: ", result);
+
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Seats are not reserved or already booked.",
+      });
     }
 
     // Emit event to notify clients about the updated seats
-    io.emit("seatsUpdated", seatIds); // Emit an array of seatIds
+    io.emit("seatsUpdated", seatIds);
 
-    res
-      .status(200)
-      .json({ message: "Seats booked successfully", seats: updatedSeats });
+    res.status(200).json({
+      success: true,
+      message: "Seats booked successfully.",
+    });
   } catch (error) {
-    console.error("Error booking seat:", error.message);
-    res.status(500).json({ message: "Server error" });
+    console.error("Error booking seats:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error while booking seats.",
+    });
   }
 };

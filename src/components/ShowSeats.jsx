@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import VipSeat from "./VipSeat";
 import BolconySeat from "./BalconySeat";
@@ -8,6 +9,7 @@ import { io } from "socket.io-client";
 const socket = io("http://localhost:5000");
 
 const ShowSeats = () => {
+  const navigate = useNavigate();
   const [seatArray, setSeatArray] = useState([]);
   const [regularSeat, setRegularSeat] = useState([]);
   const [balconySeat, setBalconySeat] = useState([]);
@@ -16,12 +18,10 @@ const ShowSeats = () => {
   const [mySeats, setMySeats] = useState([]);
 
   const fetchData = async () => {
-    console.log("fetch");
     try {
       const response = await axios.get(
         "http://localhost:5000/api/v1/seat/getAllSeats"
       );
-      console.log("Data:", response.data);
       setSeatArray(response.data.data || []);
     } catch (error) {
       console.error("Error fetching data:", error.message);
@@ -47,34 +47,71 @@ const ShowSeats = () => {
     try {
       const seatIds = mySeats.map((seat) => seat._id);
       console.log("Book: ", seatIds);
-      await axios.post("http://localhost:5000/api/v1/seat/bookSeats", {
-        seatIds,
-      });
+      const res = await axios.post(
+        "http://localhost:5000/api/v1/seat/reserveSeats",
+        {
+          seatIds,
+        }
+      );
 
-      // // Emit socket event to notify other users
-      // socket.emit("seatsBooked", seatIds);
+      if (res?.data?.success) {
+        // Navigate to the payment page and send seatIds as part of the state
+        navigate("/make-payment", { state: { seatIds } });
+        alert(res?.data?.message);
+      }
 
       // Clear mySeats after booking
       setMySeats([]);
     } catch (error) {
-      console.error("Error booking seats:", error.message);
+      console.error("Error booking seats:", error?.response?.data?.message);
+      alert(error.response?.data?.message);
+      window.location.reload();
     }
   };
 
   useEffect(() => {
     console.log("Setting up socket listener");
 
+    // book seats socket listener
     socket.on("seatsUpdated", (updatedSeatIds) => {
-      console.log("on:", updatedSeatIds);
+      console.log("on seatsUpdated:", updatedSeatIds);
       // Update the seat status directly in the state
       setSeatArray((prevSeats) =>
         prevSeats.map((seat) =>
           updatedSeatIds.includes(seat._id)
-            ? { ...seat, seatStatus: "Booked" } // Update status to "Booked"
+            ? { ...seat, seatStatus: "Booked" }
             : seat
         )
       );
       console.log("Seat status updated");
+    });
+
+    // reserved seats socket listener
+    socket.on("reservedSeats", (reservedSeatsIds) => {
+      console.log("on reservedSeats:", reservedSeatsIds);
+      // Update the seat status directly in the state
+      setSeatArray((prevSeats) =>
+        prevSeats.map((seat) =>
+          reservedSeatsIds.includes(seat._id)
+            ? { ...seat, seatStatus: "Reserved" }
+            : seat
+        )
+      );
+      console.log("Seat reserved");
+    });
+
+    // seatsToRevert socket listener
+    socket.on("seatsToRevert", (seatsToRevertIds) => {
+      console.log("on seatsToRevert:", seatsToRevertIds);
+      // Update the seat status directly in the state
+      setSeatArray((prevSeats) =>
+        prevSeats.map((seat) =>
+          seatsToRevertIds.includes(seat._id)
+            ? { ...seat, seatStatus: "Available" }
+            : seat
+        )
+      );
+      console.log("seatsToRevert");
     });
 
     console.log("Socket listener is set up");
@@ -82,6 +119,7 @@ const ShowSeats = () => {
     return () => {
       console.log("Cleanup: Removing socket listener");
       socket.off("seatsUpdated");
+      // socket.disconnect();
     };
   }, []);
 
@@ -130,6 +168,7 @@ const ShowSeats = () => {
                             (seat) => seat._id === vip._id
                           )}
                           isBooked={vip.seatStatus === "Booked"}
+                          isReserved={vip.seatStatus === "Reserved"}
                         />
                       ))}
                     </div>
@@ -154,6 +193,7 @@ const ShowSeats = () => {
                             (seat) => seat._id === balcony._id
                           )}
                           isBooked={balcony.seatStatus === "Booked"}
+                          isReserved={balcony.seatStatus === "Reserved"}
                         />
                       ))}
                     </div>
@@ -178,6 +218,7 @@ const ShowSeats = () => {
                             (seat) => seat._id === regular._id
                           )}
                           isBooked={regular.seatStatus === "Booked"}
+                          isReserved={regular.seatStatus === "Reserved"}
                         />
                       ))}
                     </div>

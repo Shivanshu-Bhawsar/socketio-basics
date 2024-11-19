@@ -1,10 +1,15 @@
 import React from "react";
+import { Route, Routes } from "react-router-dom";
 import ShowSeats from "./components/ShowSeats";
+import MakePayment from "./components/MakePayment";
 
 const App = () => {
   return (
     <div>
-      <ShowSeats />
+      <Routes>
+        <Route path="/" element={<ShowSeats />}></Route>
+        <Route path="/make-payment" element={<MakePayment />}></Route>
+      </Routes>
     </div>
   );
 };

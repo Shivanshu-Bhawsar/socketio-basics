@@ -22,6 +22,10 @@ const seatSchema = new mongoose.Schema({
     enum: SeatStatus,
     required: true,
   },
+  reservedAt: {
+    type: Date,
+    default: null,
+  },
 });
 
 module.exports = mongoose.model("Seat", seatSchema);
