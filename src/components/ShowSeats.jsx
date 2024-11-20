@@ -31,15 +31,12 @@ const ShowSeats = () => {
   // Handle seat click
   const toggleSeatSelection = (seat) => {
     console.log("click");
-    if (mySeats.some((selectedSeat) => selectedSeat._id === seat._id)) {
-      // Remove seat from selection
-      setMySeats(
-        mySeats.filter((selectedSeat) => selectedSeat._id !== seat._id)
-      );
-    } else {
-      // Add seat to selection
-      setMySeats([...mySeats, seat]);
-    }
+    setMySeats(
+      (prevSeats) =>
+        prevSeats.some((selectedSeat) => selectedSeat._id === seat._id)
+          ? prevSeats.filter((selectedSeat) => selectedSeat._id !== seat._id) // Deselect seat
+          : [...prevSeats, seat] // Select seat
+    );
   };
 
   // Book Now functionality
@@ -56,12 +53,11 @@ const ShowSeats = () => {
 
       if (res?.data?.success) {
         // Navigate to the payment page and send seatIds as part of the state
-        navigate("/make-payment", { state: { seatIds } });
         alert(res?.data?.message);
+        navigate("/make-payment", { state: { seatIds } });
       }
 
-      // Clear mySeats after booking
-      setMySeats([]);
+      setMySeats([]); // Clear selected seats after booking
     } catch (error) {
       console.error("Error booking seats:", error?.response?.data?.message);
       alert(error.response?.data?.message);
@@ -69,60 +65,50 @@ const ShowSeats = () => {
     }
   };
 
+  // Update seat statuses via socket events
+  const updateSeatStatuses = (updatedSeatIds, status) => {
+    setSeatArray((prevSeats) =>
+      prevSeats.map((seat) =>
+        updatedSeatIds.includes(seat._id)
+          ? { ...seat, seatStatus: status }
+          : seat
+      )
+    );
+  };
+
   useEffect(() => {
-    console.log("Setting up socket listener");
+    const handleSocketEvents = () => {
+      console.log("Setting up socket listener");
 
-    // book seats socket listener
-    socket.on("seatsUpdated", (updatedSeatIds) => {
-      console.log("on seatsUpdated:", updatedSeatIds);
-      // Update the seat status directly in the state
-      setSeatArray((prevSeats) =>
-        prevSeats.map((seat) =>
-          updatedSeatIds.includes(seat._id)
-            ? { ...seat, seatStatus: "Booked" }
-            : seat
-        )
-      );
-      console.log("Seat status updated");
-    });
+      socket.on("seatsUpdated", (updatedSeatIds) => {
+        console.log("on seatsUpdated:", updatedSeatIds);
+        updateSeatStatuses(updatedSeatIds, "Booked");
+      });
 
-    // reserved seats socket listener
-    socket.on("reservedSeats", (reservedSeatsIds) => {
-      console.log("on reservedSeats:", reservedSeatsIds);
-      // Update the seat status directly in the state
-      setSeatArray((prevSeats) =>
-        prevSeats.map((seat) =>
-          reservedSeatsIds.includes(seat._id)
-            ? { ...seat, seatStatus: "Reserved" }
-            : seat
-        )
-      );
-      console.log("Seat reserved");
-    });
+      socket.on("reservedSeats", (reservedSeatIds) => {
+        console.log("on reservedSeats:", reservedSeatIds);
+        updateSeatStatuses(reservedSeatIds, "Reserved");
+      });
 
-    // seatsToRevert socket listener
-    socket.on("seatsToRevert", (seatsToRevertIds) => {
-      console.log("on seatsToRevert:", seatsToRevertIds);
-      // Update the seat status directly in the state
-      setSeatArray((prevSeats) =>
-        prevSeats.map((seat) =>
-          seatsToRevertIds.includes(seat._id)
-            ? { ...seat, seatStatus: "Available" }
-            : seat
-        )
-      );
-      console.log("seatsToRevert");
-    });
+      socket.on("seatsToRevert", (seatsToRevertIds) => {
+        console.log("on seatsToRevert:", seatsToRevertIds);
+        updateSeatStatuses(seatsToRevertIds, "Available");
+      });
 
-    console.log("Socket listener is set up");
+      console.log("Socket listener is set up");
+    };
+
+    handleSocketEvents();
 
     return () => {
-      console.log("Cleanup: Removing socket listener");
+      // Cleanup socket listeners
       socket.off("seatsUpdated");
-      // socket.disconnect();
+      socket.off("reservedSeats");
+      socket.off("seatsToRevert");
     };
   }, []);
 
+  // Fetch seat data on component mount
   useEffect(() => {
     fetchData();
   }, []);
@@ -149,7 +135,7 @@ const ShowSeats = () => {
         {seatArray.length === 0 ? (
           <div className="text-center">No Show Found</div>
         ) : (
-          <div>
+          <>
             <div className="w-screen max-h-max bg-[rgb(250,250,250)] flex items-center justify-center flex-col gap-4">
               {/* VIP Seats */}
               <div className="w-[50%] flex items-center justify-center gap-2 p-2">
@@ -235,7 +221,7 @@ const ShowSeats = () => {
                 Book Now
               </button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>

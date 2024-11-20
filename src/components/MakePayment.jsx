@@ -5,25 +5,35 @@ import axios from "axios";
 const MakePayment = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { seatIds } = location.state || {}; // Get seatIds passed via state
+  const { seatIds } = location.state || {};
 
   console.log("Seat IDs received in payment page:", seatIds);
 
   // Book Now functionality after payment
   const handleMakePayment = async () => {
+    if (!seatIds || seatIds.length === 0) {
+      alert("No seats selected for payment.");
+      navigate("/");
+      return;
+    }
+
     try {
-      const res = await axios.post("http://localhost:5000/api/v1/seat/bookSeats", {
-        seatIds,
-      });
+      const res = await axios.post(
+        "http://localhost:5000/api/v1/seat/bookSeats",
+        {
+          seatIds,
+        }
+      );
 
       if (res?.data?.success) {
+        alert(res?.data?.message || "Payment successful!");
         navigate("/");
-        alert(res?.data?.message);
+      } else {
+        throw new Error(res?.data?.message || "Payment failed.");
       }
-
     } catch (error) {
       console.error("Error booking seats:", error.message);
-      alert(error.response?.data?.message);
+      alert(error.response?.data?.message || "Something went wrong!");
       navigate("/");
     }
   };

@@ -70,16 +70,16 @@ exports.reserveSeats = async (req, res, io) => {
     // fetching seats ids
     const { seatIds } = req.body;
 
-    // check if seats are already reserved or not
-    const seats = await Seat.find({
+    // Check if all seats are available
+    const availableSeats = await Seat.find({
       _id: { $in: seatIds },
       seatStatus: "Available",
     });
 
-    if (seats.length === 0 || seats.length !== seatIds.length) {
+    if (availableSeats.length !== seatIds.length) {
       return res.status(400).json({
         success: false,
-        message: "Seats are already reserved or unavailable2.",
+        message: "Some seats are already reserved or unavailable.",
       });
     }
 
@@ -93,7 +93,7 @@ exports.reserveSeats = async (req, res, io) => {
     if (result.modifiedCount === 0) {
       return res.status(400).json({
         success: false,
-        message: "Seats are already reserved or unavailable.",
+        message: "Seats could not be reserved.",
       });
     }
 
@@ -101,28 +101,29 @@ exports.reserveSeats = async (req, res, io) => {
     setTimeout(async () => {
       try {
         // Find the reserved seats that haven't been booked yet (within the last 5 minutes)
-        const fiveMinutesAgo = new Date(Date.now() - 1 * 60 * 1000);
+        const expiryTime = new Date(Date.now() - 1 * 60 * 1000);
 
         // Check if any of the reserved seats are still reserved after 5 minutes
         const seatsToRevert = await Seat.find({
           _id: { $in: seatIds },
           seatStatus: "Reserved",
-          reservedAt: { $lte: fiveMinutesAgo },
+          reservedAt: { $lte: expiryTime },
         });
         console.log("seatsToRevert: ", seatsToRevert);
 
         // If there are seats to revert, change their status to Available
         if (seatsToRevert.length > 0) {
+          const revertIds = seatsToRevert.map((seat) => seat._id);
           // Update only those seats that are still reserved
           await Seat.updateMany(
             {
-              _id: { $in: seatsToRevert.map((seat) => seat._id) },
+              _id: { $in: revertIds },
               seatStatus: "Reserved",
             },
             { $set: { seatStatus: "Available", reservedAt: null } }
           );
           console.log(`Reverted seats ${seatIds} to Available`);
-          io.emit("seatsToRevert", seatIds);
+          io.emit("seatsToRevert", revertIds);
         }
       } catch (error) {
         console.error("Error reverting reserved seats:", error.message);
@@ -130,7 +131,7 @@ exports.reserveSeats = async (req, res, io) => {
     }, 1 * 60 * 1000); // 5 minutes in milliseconds
 
     // Emit event to notify clients about the updated seats
-    io.emit("reservedSeats", seatIds); // Emit an array of seatIds
+    io.emit("reservedSeats", seatIds);
 
     res.status(200).json({
       success: true,
